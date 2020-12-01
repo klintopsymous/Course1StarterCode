@@ -1,9 +1,5 @@
 package module6;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-
 import de.fhpotsdam.unfolding.UnfoldingMap;
 import de.fhpotsdam.unfolding.data.Feature;
 import de.fhpotsdam.unfolding.data.GeoJSONReader;
@@ -12,11 +8,15 @@ import de.fhpotsdam.unfolding.geo.Location;
 import de.fhpotsdam.unfolding.marker.AbstractShapeMarker;
 import de.fhpotsdam.unfolding.marker.Marker;
 import de.fhpotsdam.unfolding.marker.MultiMarker;
-import de.fhpotsdam.unfolding.providers.Google;
 import de.fhpotsdam.unfolding.providers.MBTilesMapProvider;
+import de.fhpotsdam.unfolding.providers.OpenStreetMap;
 import de.fhpotsdam.unfolding.utils.MapUtils;
 import parsing.ParseFeed;
 import processing.core.PApplet;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 
 /** EarthquakeCityMap
  * An application with an interactive map displaying earthquake data.
@@ -73,7 +73,7 @@ public class EarthquakeCityMap extends PApplet {
 		    earthquakesURL = "2.5_week.atom";  // The same feed, but saved August 7, 2015
 		}
 		else {
-			map = new UnfoldingMap(this, 200, 50, 650, 600, new Google.GoogleMapProvider());
+			map = new UnfoldingMap(this, 200, 50, 650, 600, new OpenStreetMap.OpenStreetMapProvider());
 			// IF YOU WANT TO TEST WITH A LOCAL FILE, uncomment the next line
 		    //earthquakesURL = "2.5_week.atom";
 		}
@@ -123,7 +123,8 @@ public class EarthquakeCityMap extends PApplet {
 	    //           for their geometric properties
 	    map.addMarkers(quakeMarkers);
 	    map.addMarkers(cityMarkers);
-	    
+
+		// sortAndPrint(20);
 	    
 	}  // End setup
 	
@@ -408,6 +409,14 @@ public class EarthquakeCityMap extends PApplet {
 			return true;
 		}
 		return false;
+	}
+
+	private void sortAndPrint(int numToPrint) {
+		Marker[] earthQuakeMakers = quakeMarkers.toArray(new Marker[0]);
+		Arrays.sort(earthQuakeMakers);
+		for (int i = 0; i < numToPrint && i < earthQuakeMakers.length; i++) {
+			System.out.println(earthQuakeMakers[i]);
+		}
 	}
 
 }
