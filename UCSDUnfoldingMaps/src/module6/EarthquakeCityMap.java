@@ -4,19 +4,19 @@ import de.fhpotsdam.unfolding.UnfoldingMap;
 import de.fhpotsdam.unfolding.data.Feature;
 import de.fhpotsdam.unfolding.data.GeoJSONReader;
 import de.fhpotsdam.unfolding.data.PointFeature;
+import de.fhpotsdam.unfolding.data.ShapeFeature;
 import de.fhpotsdam.unfolding.geo.Location;
 import de.fhpotsdam.unfolding.marker.AbstractShapeMarker;
 import de.fhpotsdam.unfolding.marker.Marker;
 import de.fhpotsdam.unfolding.marker.MultiMarker;
+import de.fhpotsdam.unfolding.marker.SimpleLinesMarker;
 import de.fhpotsdam.unfolding.providers.MBTilesMapProvider;
 import de.fhpotsdam.unfolding.providers.OpenStreetMap;
 import de.fhpotsdam.unfolding.utils.MapUtils;
 import parsing.ParseFeed;
 import processing.core.PApplet;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
+import java.util.*;
 
 /** EarthquakeCityMap
  * An application with an interactive map displaying earthquake data.
@@ -57,6 +57,14 @@ public class EarthquakeCityMap extends PApplet {
 	private List<Marker> cityMarkers;
 	// Markers for each earthquake
 	private List<Marker> quakeMarkers;
+	// Markers for each airport
+	private List<Marker> airportMarkers;
+
+	private Map<Integer, Set<Marker>> routesFromTo;
+	private Map<Integer, Set<Marker>> destinations;
+
+	// Markers for routes
+	private List<Marker> routeList;
 
 	// A List of country markers
 	private List<Marker> countryMarkers;
@@ -115,6 +123,77 @@ public class EarthquakeCityMap extends PApplet {
 		  }
 	    }
 
+		// get features from airport data
+		List<PointFeature> airports = ParseFeed.parseAirports(this, "airports.dat");
+
+		// list for markers, hashmap for quicker access when matching with routes
+		airportMarkers = new ArrayList<Marker>();
+		HashMap<Integer, Location> idAirports = new HashMap<Integer, Location>();
+		routesFromTo = new HashMap<>();
+		destinations = new HashMap<>();
+
+		// create markers from features
+		for(PointFeature feature : airports) {
+			AirportMarker m = new AirportMarker(feature);
+			HashMap<String, Object> properties = m.getProperties();
+			properties.put("id", Integer.parseInt(feature.getId()));
+			m.setProperties(properties);
+
+			m.setRadius(5);
+			airportMarkers.add(m);
+
+			// put airport in hashmap with OpenFlights unique id for key
+			idAirports.put(Integer.parseInt(feature.getId()), feature.getLocation());
+
+		}// parse route data
+		List<ShapeFeature> routes = ParseFeed.parseRoutes(this, "routes.dat");
+		routeList = new ArrayList<Marker>();
+		for(ShapeFeature route : routes) {
+
+			// get source and destination airportIds
+			int source = Integer.parseInt((String)route.getProperty("source"));
+			int dest = Integer.parseInt((String)route.getProperty("destination"));
+			Set<Marker> from = routesFromTo.get(source);
+			if (from == null) {
+				from = new HashSet<>();
+				routesFromTo.put(source, from);
+			}
+			Set<Marker> to = routesFromTo.get(dest);
+			if (to == null) {
+				to = new HashSet<>();
+				routesFromTo.put(dest, to);
+			}
+
+			Set<Marker> fromDest = destinations.get(source);
+			if (fromDest == null) {
+				fromDest = new HashSet<>();
+				destinations.put(source, fromDest);
+			}
+			Set<Marker> toDest = destinations.get(dest);
+			if (toDest == null) {
+				toDest = new HashSet<>();
+				destinations.put(dest, toDest);
+			}
+			fromDest.add(findAirPortById(dest));
+			toDest.add(findAirPortById(source));
+
+			// get locations for airports on route
+			if(idAirports.containsKey(source) && idAirports.containsKey(dest)) {
+				route.addLocation(idAirports.get(source));
+				route.addLocation(idAirports.get(dest));
+			}
+
+			SimpleLinesMarker sl = new SimpleLinesMarker(route.getLocations(), route.getProperties());
+			sl.setHidden(true);
+			from.add(sl);
+			to.add(sl);
+
+			// System.out.println(sl.getProperties());
+
+			//UNCOMMENT IF YOU WANT TO SEE ALL ROUTES
+			routeList.add(sl);
+		}
+
 	    // could be used for debugging
 	    printQuakes();
 	 		
@@ -123,11 +202,21 @@ public class EarthquakeCityMap extends PApplet {
 	    //           for their geometric properties
 	    map.addMarkers(quakeMarkers);
 	    map.addMarkers(cityMarkers);
+		map.addMarkers(airportMarkers);
+		map.addMarkers(routeList);
 
-		// sortAndPrint(20);
+		sortAndPrint(20);
 	    
 	}  // End setup
-	
+
+	private Marker findAirPortById(Integer id) {
+		for (Marker airport : airportMarkers) {
+			if (id.equals(airport.getIntegerProperty("id"))) {
+				return airport;
+			}
+		}
+		return null;
+	}
 	
 	public void draw() {
 		background(0);
@@ -155,6 +244,7 @@ public class EarthquakeCityMap extends PApplet {
 		}
 		selectMarkerIfHover(quakeMarkers);
 		selectMarkerIfHover(cityMarkers);
+		selectMarkerIfHover(airportMarkers);
 		//loop();
 	}
 	
@@ -194,6 +284,9 @@ public class EarthquakeCityMap extends PApplet {
 			checkEarthquakesForClick();
 			if (lastClicked == null) {
 				checkCitiesForClick();
+				if (lastClicked == null) {
+					checkAirportsForClick();
+				}
 			}
 		}
 	}
@@ -207,6 +300,7 @@ public class EarthquakeCityMap extends PApplet {
 		for (Marker marker : cityMarkers) {
 			if (!marker.isHidden() && marker.isInside(map, mouseX, mouseY)) {
 				lastClicked = (CommonMarker)marker;
+				hideRoutesAndDest();
 				// Hide all the other earthquakes and hide
 				for (Marker mhide : cityMarkers) {
 					if (mhide != lastClicked) {
@@ -235,6 +329,7 @@ public class EarthquakeCityMap extends PApplet {
 			EarthquakeMarker marker = (EarthquakeMarker)m;
 			if (!marker.isHidden() && marker.isInside(map, mouseX, mouseY)) {
 				lastClicked = marker;
+				hideRoutesAndDest();
 				// Hide all the other earthquakes and hide
 				for (Marker mhide : quakeMarkers) {
 					if (mhide != lastClicked) {
@@ -251,14 +346,72 @@ public class EarthquakeCityMap extends PApplet {
 			}
 		}
 	}
+
+	// Helper method that will check if an earthquake marker was clicked on
+	// and respond appropriately
+	private void checkAirportsForClick()
+	{
+		if (lastClicked != null) return;
+		// Loop over the earthquake markers to see if one of them is selected
+		for (Marker m : airportMarkers) {
+			AirportMarker marker = (AirportMarker) m;
+			if (!marker.isHidden() && marker.isInside(map, mouseX, mouseY)) {
+				lastClicked = marker;
+				hideRoutesAndDest();
+				hideMarkers();
+				lastClicked.setHidden(false);
+				Set<Marker> routes = routesFromTo.get(marker.getIntegerProperty("id"));
+				if (routes != null) {
+					for (Marker route : routes) {
+						route.setHidden(false);
+					}
+				}
+				Set<Marker> dests = destinations.get(marker.getIntegerProperty("id"));
+				if (dests != null) {
+					for (Marker dest : dests) {
+						dest.setHidden(false);
+					}
+				}
+				return;
+			}
+		}
+	}
+
+	private void hideRoutesAndDest() {
+		for (Marker airport : airportMarkers) {
+			airport.setHidden(true);
+		}
+		for (Marker route: routeList) {
+			route.setHidden(true);
+		}
+		for (Marker airport: airportMarkers) {
+			airport.setHidden(true);
+		}
+	}
+
+	// loop over and unhide all markers
+	private void hideMarkers() {
+		for(Marker marker : quakeMarkers) {
+			marker.setHidden(true);
+		}
+
+		for(Marker marker : cityMarkers) {
+			marker.setHidden(true);
+		}
+	}
 	
 	// loop over and unhide all markers
 	private void unhideMarkers() {
+		hideRoutesAndDest();
 		for(Marker marker : quakeMarkers) {
 			marker.setHidden(false);
 		}
 			
 		for(Marker marker : cityMarkers) {
+			marker.setHidden(false);
+		}
+
+		for(Marker marker : airportMarkers) {
 			marker.setHidden(false);
 		}
 	}
